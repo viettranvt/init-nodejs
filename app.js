@@ -1,4 +1,4 @@
-const createError = require('http-errors');
+const http = require('http');
 const express = require('express');
 const path = require('path');
 const cookieParser = require('cookie-parser');
@@ -6,23 +6,24 @@ const logger = require('morgan');
 const cors = require('cors');
 const HttpStatus = require('http-status-codes');
 const fs = require('fs');
+require('express-async-errors');
+require('dotenv').config()
+
+const db = require('./database/db');
+const UsersDumpData = require('./dump-data/user.dump-data');
 
 // create logs folder
-if (!fs.existsSync('./logs')) {
-  fs.mkdirSync('./logs');
-}
+// if (!fs.existsSync('./logs')) {
+//   fs.mkdirSync('./logs');
+// }
 // config log4js
 const log4js = require('log4js');
-log4js.configure('./config/log4js.json');
-const loggerApp = log4js.getLogger('app');
+//create logger file
+// log4js.configure('./config/log4js.json');
+const loggerApp = log4js.getLogger('App');
 
 const app = express();
-const corsOptionsDelegate = function (req, callback) {
-  let corsOptions;
-  corsOptions = { origin: true, credentials: true }; // reflect (enable) the requested origin in the CORS response
-  callback(null, corsOptions) // callback expects two parameters: error and options
-};
-app.use(cors(corsOptionsDelegate));
+app.use(cors());
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(logger('dev'));
@@ -32,22 +33,39 @@ app.use(cookieParser());
 app.use('/api', require('./routes'));
 
 // catch 404 and forward to error handler
-app.use(function (req, res, next) {
-  next(createError(404));
+app.use((req, res, next) => {
+  return res.status(HttpStatus.NOT_FOUND).json({
+    messages: ['Not Found'],
+    status: HttpStatus.NOT_FOUND,
+  });
 });
 
 // error handler
-app.use(function (err, req, res, next) {
+app.use((err, req, res, next) => {
   const msg = err.message ? err.message : JSON.stringify(err);
 
-  loggerApp.error('app::error ', err);
-  console.error(msg);
+  loggerApp.error('APP::error ', JSON.stringify(err));
 
-  return res
-    .status(HttpStatus.BAD_REQUEST)
-    .json({
-      messages: [msg]
-    });
+  return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+    messages: [msg],
+    status: HttpStatus.INTERNAL_SERVER_ERROR,
+  });
+});
+
+//get the port and set the port for the server
+const port = process.env.PORT || process.env.APP_PORT || 3000;
+app.set('port', port);
+
+//create server
+const server = http.createServer(app);
+
+//test the database connection before running the server
+db(() => {
+  loggerApp.info('APP::Database connection successful');
+  server.listen(port, () => {
+    loggerApp.info('APP::Server is running on port', port);
+    UsersDumpData();
+  });
 });
 
 module.exports = app;
